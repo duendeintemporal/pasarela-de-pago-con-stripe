@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Stripe Payment Gateway</title>
+    <script src="https://js.stripe.com/v3/"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 600px;
+            margin: 0 auto;
+            padding: 20px;
+            background: rgba(0,0, 0, 0.3);
+        }
+        h1 {
+            text-transform: uppercase;
+            text-align: center;
+            color: #ccc;
+            background: #000000cc;
+        }
+        #payment-form {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+        #card-element {
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            padding: 10px;
+        }
+        #submit-button {
+            background-color: #007bff;
+            color: white;
+            padding: 10px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        #submit-button:hover {
+            background-color: #0056b3;
+        }
+        #error-message {
+            color: red;
+            background: rgba(255, 0, 0, 0.1);
+            padding: 10px;
+            border-radius: 4px; 
+        }
+    </style>
+</head>
+<body>
+    <h1>Formulario de Pago</h1>
+    <form id="payment-form">
+        <div id="card-element"></div>
+        <button id="submit-button">Pagar</button>
+    </form>
+    <div id="error-message"></div>
+
+    <script>
+        let stripePublicKey;
+
+        // Fetch the public key from the server
+        fetch('/api/stripe-key')
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error('Network response was not ok');
+                }
+                return response.json();
+            })
+            .then(config => {
+                stripePublicKey = config.publicKey; // Access the public key from the response
+                const stripe = Stripe(stripePublicKey);
+                const elements = stripe.elements();
+                const cardElement = elements.create('card');
+                cardElement.mount('#card-element');
+
+                const form = document.getElementById('payment-form');
+                form.addEventListener('submit', async (event) => {
+                    event.preventDefault();
+                    document.getElementById('error-message').textContent = ''; // Clear previous error messages
+                    const submitButton = document.getElementById('submit-button');
+                    submitButton.disabled = true; // Disable the button to prevent multiple submissions
+
+                    // Create a payment method using the card element
+                    const { error, paymentMethod } = await stripe.createPaymentMethod({
+                        type: 'card',
+                        card: cardElement,
+                    });
+
+                    if (error) {
+                        // Display error message
+                        document.getElementById('error-message').textContent = error.message;
+                        submitButton.disabled = false; // Re-enable the button
+                    } else {
+                        // Send paymentMethod.id to your server to process the payment
+                        try {
+                            const response = await fetch('/create-payment-intent', {
+                                method: 'POST',
+                                headers: {
+                                    'Content-Type': 'application/json',
+                                },
+                                body: JSON.stringify({ paymentMethodId: paymentMethod.id, amount: 1000, currency: 'usd' }), // Example amount and currency
+                            });
+
+                            const data = await response.json();
+
+                            if (data.error) {
+                                // Handle server-side error
+                                document.getElementById('error-message').textContent = data.error;
+                            } else {
+                                // Payment successful, handle success (e.g., show a success message)
+                                console.log('Payment successful:', data);
+                                // Optionally redirect or update the UI
+                            }
+                        } catch (error) {
+                            console.error('Error processing payment:', error);
+                            document.getElementById('error-message').textContent = 'Payment processing error.';
+                        }
+                    }
+                });
+            })
+            .catch(error => {
+                console.error('Error fetching configuration:', error);
+                document.getElementById('error-message').textContent = 'Failed to load configuration.';
+            });
+    </script>    
+</body>
+</html>
